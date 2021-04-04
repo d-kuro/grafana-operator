@@ -2,13 +2,14 @@ package grafana
 
 import (
 	"fmt"
+	"regexp"
+
 	"github.com/integr8ly/grafana-operator/v3/pkg/apis/integreatly/v1alpha1"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/common"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/config"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/model"
 	v1 "k8s.io/api/core/v1"
 	v12 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"regexp"
 )
 
 type GrafanaReconciler struct {
@@ -339,7 +340,7 @@ func (i *GrafanaReconciler) getGrafanaPluginsDesiredState(cr *v1alpha1.Grafana) 
 		// Reset the list of known dashboards to force the dashboard controller
 		// to reimport them
 		cfg := config.GetControllerConfig()
-		cfg.InvalidateDashboards()
+		cr.Status.InstalledDashboards = cfg.InvalidateDashboards(cr)
 
 		return common.LogAction{
 			Msg: fmt.Sprintf("plugins updated to %s", i.PluginsEnv),

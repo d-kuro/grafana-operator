@@ -3,16 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/operator-framework/operator-sdk/pkg/log/zap"
-	"github.com/spf13/pflag"
 	"os"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/operator-framework/operator-sdk/pkg/log/zap"
+	"github.com/spf13/pflag"
 
 	"github.com/integr8ly/grafana-operator/v3/pkg/apis"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/common"
-	config2 "github.com/integr8ly/grafana-operator/v3/pkg/controller/config"
+	controllerconfig "github.com/integr8ly/grafana-operator/v3/pkg/controller/config"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/grafanadashboard"
 	"github.com/integr8ly/grafana-operator/v3/version"
 	routev1 "github.com/openshift/api/route/v1"
@@ -20,7 +22,7 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/leader"
 	"github.com/operator-framework/operator-sdk/pkg/metrics"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -67,10 +69,13 @@ func init() {
 
 // Starts a separate controller for the dashboard reconciliation in the background
 func startDashboardController(ns string, cfg *rest.Config, signalHandler <-chan struct{}, autodetectChannel chan schema.GroupVersionKind) {
+	syncPeriod := time.Second * 60
+
 	// Create a new Cmd to provide shared dependencies and start components
 	dashboardMgr, err := manager.New(cfg, manager.Options{
 		MetricsBindAddress: "0",
 		Namespace:          ns,
+		SyncPeriod:         &syncPeriod, // TODO: Re-sync all dashboards every 60 seconds.
 	})
 	if err != nil {
 		log.Error(err, "")
@@ -132,14 +137,14 @@ func main() {
 	}
 
 	// Controller configuration
-	controllerConfig := config2.GetControllerConfig()
-	controllerConfig.AddConfigItem(config2.ConfigGrafanaImage, flagImage)
-	controllerConfig.AddConfigItem(config2.ConfigGrafanaImageTag, flagImageTag)
-	controllerConfig.AddConfigItem(config2.ConfigPluginsInitContainerImage, flagPluginsInitContainerImage)
-	controllerConfig.AddConfigItem(config2.ConfigPluginsInitContainerTag, flagPluginsInitContainerTag)
-	controllerConfig.AddConfigItem(config2.ConfigOperatorNamespace, namespace)
-	controllerConfig.AddConfigItem(config2.ConfigDashboardLabelSelector, "")
-	controllerConfig.AddConfigItem(config2.ConfigJsonnetBasePath, flagJsonnetLocation)
+	controllerConfig := controllerconfig.GetControllerConfig()
+	controllerConfig.AddConfigItem(controllerconfig.ConfigGrafanaImage, flagImage)
+	controllerConfig.AddConfigItem(controllerconfig.ConfigGrafanaImageTag, flagImageTag)
+	controllerConfig.AddConfigItem(controllerconfig.ConfigPluginsInitContainerImage, flagPluginsInitContainerImage)
+	controllerConfig.AddConfigItem(controllerconfig.ConfigPluginsInitContainerTag, flagPluginsInitContainerTag)
+	controllerConfig.AddConfigItem(controllerconfig.ConfigOperatorNamespace, namespace)
+	controllerConfig.AddConfigItem(controllerconfig.ConfigDashboardLabelSelector, "")
+	controllerConfig.AddConfigItem(controllerconfig.ConfigJsonnetBasePath, flagJsonnetLocation)
 
 	// Get the namespaces to scan for dashboards
 	// It's either the same namespace as the controller's or it's all namespaces if the
@@ -208,10 +213,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	servicePorts := []v1.ServicePort{
+	servicePorts := []corev1.ServicePort{
 		{
 			Name:       metrics.OperatorPortName,
-			Protocol:   v1.ProtocolTCP,
+			Protocol:   corev1.ProtocolTCP,
 			Port:       metricsPort,
 			TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: metricsPort},
 		},

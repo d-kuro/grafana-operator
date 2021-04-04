@@ -28,7 +28,6 @@ import (
 )
 
 const ControllerName = "grafana-controller"
-const DefaultClientTimeoutSeconds = 5
 
 var log = logf.Log.WithName(ControllerName)
 
@@ -197,6 +196,8 @@ func (r *ReconcileGrafana) manageError(cr *grafanav1alpha1.Grafana, issue error,
 		return reconcile.Result{}, err
 	}
 
+	instance.Status.InstalledDashboards = r.config.InvalidateDashboards(instance)
+
 	if !reflect.DeepEqual(cr.Status, instance.Status) {
 		err := r.client.Status().Update(r.context, cr)
 		if err != nil {
@@ -206,12 +207,6 @@ func (r *ReconcileGrafana) manageError(cr *grafanav1alpha1.Grafana, issue error,
 			}
 			return reconcile.Result{}, err
 		}
-	}
-
-	r.config.InvalidateDashboards()
-
-	common.ControllerEvents <- common.ControllerState{
-		GrafanaReady: false,
 	}
 
 	return reconcile.Result{RequeueAfter: config.RequeueDelay}, nil
@@ -264,14 +259,13 @@ func (r *ReconcileGrafana) manageSuccess(cr *grafanav1alpha1.Grafana, state *com
 	cr.Status.Message = "success"
 	cr.Status.Ready = true
 
-	// Only update the status if the dashboard controller had a chance to sync the cluster
-	// dashboards first. Otherwise reuse the existing dashboard config from the CR.
-	if r.config.GetConfigBool(config.ConfigGrafanaDashboardsSynced, false) {
-		cr.Status.InstalledDashboards = r.config.Dashboards
-	} else {
-		if r.config.Dashboards == nil {
-			r.config.SetDashboards(make(map[string][]*grafanav1alpha1.GrafanaDashboardRef))
-		}
+	cr.Status.AdminUser = &grafanav1alpha1.SecretKeyRef{
+		SecretName: state.AdminSecret.Name,
+		Key:        model.GrafanaAdminUserEnvVar,
+	}
+	cr.Status.AdminPassword = &grafanav1alpha1.SecretKeyRef{
+		SecretName: state.AdminSecret.Name,
+		Key:        model.GrafanaAdminPasswordEnvVar,
 	}
 
 	// Make the Grafana API URL available to the dashboard controller
@@ -294,25 +288,6 @@ func (r *ReconcileGrafana) manageSuccess(cr *grafanav1alpha1.Grafana, state *com
 			return r.manageError(cr, err, request)
 		}
 	}
-
-	// Publish controller state
-	controllerState := common.ControllerState{
-		DashboardSelectors:         cr.Spec.DashboardLabelSelector,
-		DashboardNamespaceSelector: cr.Spec.DashboardNamespaceSelector,
-		AdminUrl:                   url,
-		GrafanaReady:               true,
-		ClientTimeout:              DefaultClientTimeoutSeconds,
-	}
-
-	if cr.Spec.Client != nil && cr.Spec.Client.TimeoutSeconds != nil {
-		seconds := *cr.Spec.Client.TimeoutSeconds
-		if seconds < 0 {
-			seconds = DefaultClientTimeoutSeconds
-		}
-		controllerState.ClientTimeout = seconds
-	}
-
-	common.ControllerEvents <- controllerState
 
 	log.V(1).Info("desired cluster state met")
 
