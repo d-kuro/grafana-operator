@@ -4,6 +4,8 @@ import (
 	"context"
 	stdErr "errors"
 	"fmt"
+	"reflect"
+
 	grafanav1alpha1 "github.com/integr8ly/grafana-operator/v3/pkg/apis/integreatly/v1alpha1"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/common"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/config"
@@ -16,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
-	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -188,6 +189,7 @@ func (r *ReconcileGrafana) manageError(cr *grafanav1alpha1.Grafana, issue error,
 	r.recorder.Event(cr, "Warning", "ProcessingError", issue.Error())
 	cr.Status.Phase = grafanav1alpha1.PhaseFailing
 	cr.Status.Message = issue.Error()
+	cr.Status.Ready = false
 
 	instance := &grafanav1alpha1.Grafana{}
 	err := r.client.Get(r.context, request.NamespacedName, instance)
@@ -260,6 +262,7 @@ func (r *ReconcileGrafana) getGrafanaAdminUrl(cr *grafanav1alpha1.Grafana, state
 func (r *ReconcileGrafana) manageSuccess(cr *grafanav1alpha1.Grafana, state *common.ClusterState, request reconcile.Request) (reconcile.Result, error) {
 	cr.Status.Phase = grafanav1alpha1.PhaseReconciling
 	cr.Status.Message = "success"
+	cr.Status.Ready = true
 
 	// Only update the status if the dashboard controller had a chance to sync the cluster
 	// dashboards first. Otherwise reuse the existing dashboard config from the CR.
@@ -271,8 +274,16 @@ func (r *ReconcileGrafana) manageSuccess(cr *grafanav1alpha1.Grafana, state *com
 		}
 	}
 
+	// Make the Grafana API URL available to the dashboard controller
+	url, err := r.getGrafanaAdminUrl(cr, state)
+	if err != nil {
+		return r.manageError(cr, err, request)
+	}
+
+	cr.Status.AdminURL = &url
+
 	instance := &grafanav1alpha1.Grafana{}
-	err := r.client.Get(r.context, request.NamespacedName, instance)
+	err = r.client.Get(r.context, request.NamespacedName, instance)
 	if err != nil {
 		return r.manageError(cr, err, request)
 	}
@@ -282,11 +293,6 @@ func (r *ReconcileGrafana) manageSuccess(cr *grafanav1alpha1.Grafana, state *com
 		if err != nil {
 			return r.manageError(cr, err, request)
 		}
-	}
-	// Make the Grafana API URL available to the dashboard controller
-	url, err := r.getGrafanaAdminUrl(cr, state)
-	if err != nil {
-		return r.manageError(cr, err, request)
 	}
 
 	// Publish controller state
