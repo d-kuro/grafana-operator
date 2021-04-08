@@ -479,16 +479,17 @@ type GrafanaConfigPlugins struct {
 // GrafanaStatus defines the observed state of Grafana
 // +k8s:openapi-gen=true
 type GrafanaStatus struct {
-	Phase               StatusPhase                       `json:"phase"`
-	PreviousServiceName string                            `json:"previousServiceName"`
-	Message             string                            `json:"message"`
-	InstalledDashboards map[string][]*GrafanaDashboardRef `json:"dashboards"`
-	InstalledPlugins    PluginList                        `json:"installedPlugins"`
-	FailedPlugins       PluginList                        `json:"failedPlugins"`
+	Phase               StatusPhase                       `json:"phase,omitempty"`
+	PreviousServiceName string                            `json:"previousServiceName,omitempty"`
+	Message             string                            `json:"message,omitempty"`
+	InstalledDashboards map[string][]*GrafanaDashboardRef `json:"dashboards,omitempty"`
+	Plugins             PluginList                        `json:"plugins,omitempty"`
+	InstalledPlugins    PluginList                        `json:"installedPlugins,omitempty"`
+	FailedPlugins       PluginList                        `json:"failedPlugins,omitempty"`
 	Ready               bool                              `json:"ready"`
-	AdminURL            *string                           `json:"adminUrl"`
-	AdminUser           *SecretKeyRef                     `json:"adminUser"`
-	AdminPassword       *SecretKeyRef                     `json:"adminPassword"`
+	AdminURL            *string                           `json:"adminUrl,omitempty"`
+	AdminUser           *SecretKeyRef                     `json:"adminUser,omitempty"`
+	AdminPassword       *SecretKeyRef                     `json:"adminPassword,omitempty"`
 }
 
 type SecretKeyRef struct {
