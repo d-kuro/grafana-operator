@@ -401,13 +401,6 @@ func (r *ReconcileGrafanaDashboard) manageSuccess(ctx context.Context,
 
 	err := r.client.Status().Update(ctx, grafana)
 	if err != nil {
-		// Ignore conflicts, resource might just be outdated.
-		if k8serrors.IsConflict(err) {
-			err = nil
-
-			return
-		}
-
 		log.Error(err, fmt.Sprintf("failed to update Grafana status %s/%s", grafana.Namespace, grafana.Name))
 	}
 }
