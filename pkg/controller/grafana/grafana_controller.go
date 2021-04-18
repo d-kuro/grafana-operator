@@ -259,13 +259,15 @@ func (r *ReconcileGrafana) manageSuccess(cr *grafanav1alpha1.Grafana, state *com
 	cr.Status.Message = "success"
 	cr.Status.Ready = true
 
-	cr.Status.AdminUser = &grafanav1alpha1.SecretKeyRef{
-		SecretName: state.AdminSecret.Name,
-		Key:        model.GrafanaAdminUserEnvVar,
-	}
-	cr.Status.AdminPassword = &grafanav1alpha1.SecretKeyRef{
-		SecretName: state.AdminSecret.Name,
-		Key:        model.GrafanaAdminPasswordEnvVar,
+	if state.AdminSecret != nil {
+		cr.Status.AdminUser = &grafanav1alpha1.SecretKeyRef{
+			SecretName: state.AdminSecret.Name,
+			Key:        model.GrafanaAdminUserEnvVar,
+		}
+		cr.Status.AdminPassword = &grafanav1alpha1.SecretKeyRef{
+			SecretName: state.AdminSecret.Name,
+			Key:        model.GrafanaAdminPasswordEnvVar,
+		}
 	}
 
 	// Make the Grafana API URL available to the dashboard controller
