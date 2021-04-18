@@ -4,7 +4,7 @@ import (
 	"github.com/blang/semver"
 )
 
-type PluginList []GrafanaPlugin
+type PluginList []*GrafanaPlugin
 
 // Returns true if the list contains the same plugin in the exact or a different version
 func (l PluginList) HasSomeVersionOf(plugin *GrafanaPlugin) bool {
@@ -20,7 +20,7 @@ func (l PluginList) HasSomeVersionOf(plugin *GrafanaPlugin) bool {
 func (l PluginList) GetInstalledVersionOf(plugin *GrafanaPlugin) *GrafanaPlugin {
 	for _, listedPlugin := range l {
 		if listedPlugin.Name == plugin.Name {
-			return &listedPlugin
+			return listedPlugin
 		}
 	}
 	return nil

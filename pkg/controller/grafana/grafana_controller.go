@@ -4,6 +4,8 @@ import (
 	"context"
 	stdErr "errors"
 	"fmt"
+	"reflect"
+
 	grafanav1alpha1 "github.com/integr8ly/grafana-operator/v3/pkg/apis/integreatly/v1alpha1"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/common"
 	"github.com/integr8ly/grafana-operator/v3/pkg/controller/config"
@@ -16,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
-	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -27,7 +28,6 @@ import (
 )
 
 const ControllerName = "grafana-controller"
-const DefaultClientTimeoutSeconds = 5
 
 var log = logf.Log.WithName(ControllerName)
 
@@ -188,12 +188,15 @@ func (r *ReconcileGrafana) manageError(cr *grafanav1alpha1.Grafana, issue error,
 	r.recorder.Event(cr, "Warning", "ProcessingError", issue.Error())
 	cr.Status.Phase = grafanav1alpha1.PhaseFailing
 	cr.Status.Message = issue.Error()
+	cr.Status.Ready = false
 
 	instance := &grafanav1alpha1.Grafana{}
 	err := r.client.Get(r.context, request.NamespacedName, instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+
+	instance.Status.InstalledDashboards = r.config.InvalidateDashboards(instance)
 
 	if !reflect.DeepEqual(cr.Status, instance.Status) {
 		err := r.client.Status().Update(r.context, cr)
@@ -204,12 +207,6 @@ func (r *ReconcileGrafana) manageError(cr *grafanav1alpha1.Grafana, issue error,
 			}
 			return reconcile.Result{}, err
 		}
-	}
-
-	r.config.InvalidateDashboards()
-
-	common.ControllerEvents <- common.ControllerState{
-		GrafanaReady: false,
 	}
 
 	return reconcile.Result{RequeueAfter: config.RequeueDelay}, nil
@@ -260,19 +257,29 @@ func (r *ReconcileGrafana) getGrafanaAdminUrl(cr *grafanav1alpha1.Grafana, state
 func (r *ReconcileGrafana) manageSuccess(cr *grafanav1alpha1.Grafana, state *common.ClusterState, request reconcile.Request) (reconcile.Result, error) {
 	cr.Status.Phase = grafanav1alpha1.PhaseReconciling
 	cr.Status.Message = "success"
+	cr.Status.Ready = true
 
-	// Only update the status if the dashboard controller had a chance to sync the cluster
-	// dashboards first. Otherwise reuse the existing dashboard config from the CR.
-	if r.config.GetConfigBool(config.ConfigGrafanaDashboardsSynced, false) {
-		cr.Status.InstalledDashboards = r.config.Dashboards
-	} else {
-		if r.config.Dashboards == nil {
-			r.config.SetDashboards(make(map[string][]*grafanav1alpha1.GrafanaDashboardRef))
+	if state.AdminSecret != nil {
+		cr.Status.AdminUser = &grafanav1alpha1.SecretKeyRef{
+			SecretName: state.AdminSecret.Name,
+			Key:        model.GrafanaAdminUserEnvVar,
+		}
+		cr.Status.AdminPassword = &grafanav1alpha1.SecretKeyRef{
+			SecretName: state.AdminSecret.Name,
+			Key:        model.GrafanaAdminPasswordEnvVar,
 		}
 	}
 
+	// Make the Grafana API URL available to the dashboard controller
+	url, err := r.getGrafanaAdminUrl(cr, state)
+	if err != nil {
+		return r.manageError(cr, err, request)
+	}
+
+	cr.Status.AdminURL = &url
+
 	instance := &grafanav1alpha1.Grafana{}
-	err := r.client.Get(r.context, request.NamespacedName, instance)
+	err = r.client.Get(r.context, request.NamespacedName, instance)
 	if err != nil {
 		return r.manageError(cr, err, request)
 	}
@@ -283,30 +290,6 @@ func (r *ReconcileGrafana) manageSuccess(cr *grafanav1alpha1.Grafana, state *com
 			return r.manageError(cr, err, request)
 		}
 	}
-	// Make the Grafana API URL available to the dashboard controller
-	url, err := r.getGrafanaAdminUrl(cr, state)
-	if err != nil {
-		return r.manageError(cr, err, request)
-	}
-
-	// Publish controller state
-	controllerState := common.ControllerState{
-		DashboardSelectors:         cr.Spec.DashboardLabelSelector,
-		DashboardNamespaceSelector: cr.Spec.DashboardNamespaceSelector,
-		AdminUrl:                   url,
-		GrafanaReady:               true,
-		ClientTimeout:              DefaultClientTimeoutSeconds,
-	}
-
-	if cr.Spec.Client != nil && cr.Spec.Client.TimeoutSeconds != nil {
-		seconds := *cr.Spec.Client.TimeoutSeconds
-		if seconds < 0 {
-			seconds = DefaultClientTimeoutSeconds
-		}
-		controllerState.ClientTimeout = seconds
-	}
-
-	common.ControllerEvents <- controllerState
 
 	log.V(1).Info("desired cluster state met")
 

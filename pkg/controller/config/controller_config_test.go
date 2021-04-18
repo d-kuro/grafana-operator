@@ -1,10 +1,11 @@
 package config
 
 import (
-	"github.com/integr8ly/grafana-operator/v3/pkg/apis/integreatly/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
 	"time"
+
+	"github.com/integr8ly/grafana-operator/v3/pkg/apis/integreatly/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestControllerConfig_ConcurrentlyReadAndWritePlugins(t *testing.T) {
@@ -27,7 +28,7 @@ func TestControllerConfig_ConcurrentlyReadAndWritePlugins(t *testing.T) {
 					Namespace: "crash",
 				},
 				Spec: v1alpha1.GrafanaDashboardSpec{
-					Plugins: []v1alpha1.GrafanaPlugin{
+					Plugins: []*v1alpha1.GrafanaPlugin{
 						{Name: "one", Version: "0"},
 						{Name: "two", Version: "0"},
 						{Name: "tttt", Version: "0"},
